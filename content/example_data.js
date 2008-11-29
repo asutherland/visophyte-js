@@ -53,6 +53,11 @@ function Message(aInReplyToId, aDate, aConversation, aFrom, aToList) {
   this.from = aFrom;
   this.to = aToList;
 }
+Message.prototype = {
+  toString: function() {
+    return "message:" + this.id;
+  }
+}
 
 var messages = [
   // conv 0 : id's 1-4

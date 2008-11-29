@@ -223,6 +223,11 @@ VisContext.prototype = {
     this.canvas = aCanvas;
     
     // maybe we should white things out here...
+    this.canvas.save();
+    this.canvas.setTransform(1, 0, 0, 1, 0, 0);
+    let canvasNode = this.canvas.canvas;
+    this.canvas.clearRect(0, 0, canvasNode.width, canvasNode.height);
+    this.canvas.restore();
     
     this.allDone = true;
     this.subRender(this.vis);
@@ -237,6 +242,26 @@ VisContext.prototype = {
     }
     if (aNode)
       this.pop();
+  },
+  prepHitTest: function(aTestX, aTestY) {
+    this.hitTestEnabled = true;
+    this.testX = aTestX;
+    this.testY = aTestY;
+    this.hitNode = null;
+  },
+  clearHitTest: function() {
+    this.hitTestEnabled = false;
+    return this.hitNode;
+  },
+  hitTest: function(aItem) {
+    if (!this.hitTestEnabled)
+      return;
+    this.canvas.save();
+    this.canvas.setTransform(1, 0, 0, 1, 0, 0);
+    if (this.canvas.isPointInPath(this.testX, this.testY)) {
+      this.hitNode = aItem;
+    }
+    this.canvas.restore();
   }
 };
 
@@ -409,6 +434,7 @@ ArcEdges.prototype = {
       ctx.beginPath();
       ctx.arc(mx, 0, dx/2, 0, Math.PI, true);
       ctx.closePath();
+      aVisContext.hitTest(item);
       ctx.stroke();
     }
     return true;
@@ -434,6 +460,7 @@ Circle.prototype = {
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, Math.PI * 2, true);
     ctx.closePath();
+    aVisContext.hitTest(item);
     if (fill) {
       ctx.fillStyle = fill.toString();
       ctx.fill();
@@ -536,10 +563,11 @@ function kickIt(aVisContext, aCanvasNode, aCanvasContext,
   if (aAdjustTop === undefined)
     aAdjustTop = aCanvasNode.height / 2;
   aCanvasContext.translate(aAdjustLeft, aAdjustTop);
-  aVisContext.render(aCanvasContext);
-  aVisContext.intervalId = 
-    window.setInterval(function() {
-        if(aVisContext.render(aCanvasContext))
-          window.clearInterval(aVisContext.intervalId);
-      }, Math.floor(1000 / 60));
+  if (!aVisContext.render(aCanvasContext)) {
+    aVisContext.intervalId = 
+      window.setInterval(function() {
+          if(aVisContext.render(aCanvasContext))
+            window.clearInterval(aVisContext.intervalId);
+        }, Math.floor(1000 / 60));
+  }
 }

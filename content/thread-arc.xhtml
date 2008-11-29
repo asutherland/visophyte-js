@@ -3,14 +3,14 @@
  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
   <head>
-    <title>Animated Pie Chart</title>
+    <title>Thread Arc</title>
     <script src="example_data.js" type="application/javascript;version=1.8"/>
     <script src="visophyte.js" type="application/javascript;version=1.8"/>
     <script type="application/javascript;version=1.8">
       var vThread;
       var vcThread;
       function setupVis() {
-        vMessage = new Vis()
+        vMessage = new Vis();
         vMessage.add(new Circle("fromFill", "fromStroke", "fromStrokeWidth",
                                 "radius"));
       
@@ -36,9 +36,18 @@
         var node = document.getElementById("thready");
         kickIt(vcThread, node, node.getContext("2d"), 0, 90);
       }
+      
+      function clicky(aEvent) {
+        var canvasNode = document.getElementById("thready");
+        var bounds = canvasNode.getBoundingClientRect();
+        vcThread.prepHitTest(aEvent.clientX - bounds.left,
+                             aEvent.clientY - bounds.top);
+        vcThread.render(canvasNode.getContext("2d"));
+        var hit = vcThread.clearHitTest();
+      }
     </script>
   </head>
   <body onload="brightside();">
-    <canvas id="thready" width="200" height="100"></canvas>
+    <canvas id="thready" width="200" height="100" onclick="clicky(event);"></canvas>
   </body>
 </html>
