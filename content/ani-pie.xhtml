@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+ "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
+  <head>
+    <title>Animated Pie Chart</title>
+    <script src="example_data.js" type="application/javascript;version=1.8"/>
+    <script src="visophyte.js" type="application/javascript;version=1.8"/>
+    <script type="application/javascript;version=1.8">
+      var data = [{label: "cats", value: 14},
+                  {label: "dogs", value: 20},
+                  {label: "fish", value: 9},
+                  {label: "hamsters", value: 6},
+                  {label: "snakes", value: 3}];
+    
+      var vPie;
+      var vcPie;
+      function setupVis() {
+        vPie = new Vis();
+        vPie.add(new AutoColor("fill"));
+        vPie.add(new AnimatedPie("value", "radius", 2000));
+        
+        vcPie = vPie.makeContext(data, {radius: 50});
+      }
+      
+      function brightside() {
+        setupVis();
+        var node = document.getElementById("anipie");
+        kickIt(vcPie, node, node.getContext("2d"));
+      }
+    </script>
+  </head>
+  <body onload="brightside();">
+    <canvas id="anipie" width="200" height="200"></canvas>
+  </body>
+</html>
