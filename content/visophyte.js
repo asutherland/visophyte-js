@@ -219,6 +219,8 @@ VisContext.prototype = {
     if (this.startStamp === undefined)
       this.startStamp = now;
     this.tdelta = now - this.startStamp;
+    if (this.tdelta == 0)
+      this.tdelta = 1;
     
     this.canvas = aCanvas;
     
