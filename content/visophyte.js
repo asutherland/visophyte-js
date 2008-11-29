@@ -1,4 +1,4 @@
-
+""
 function clamp(aVal, aLow, aHigh) {
   return Math.max(aLow, Math.min(aHigh, aVal));
 }
@@ -191,35 +191,52 @@ function VisContext(aVis, aData, aValues) {
   for each (let [,item] in Iterator(this.data)) {
     this.phantoms.push({__proto__: item});
   }
+  this.valueStack = [aValues];
   this.values = aValues;
   
-  this.processData();
+  this.processData(this.vis);
 }
 VisContext.prototype = {
-  processData: function() {
-    for each (let [,mapper] in Iterator(this.vis.mappers)) {
+  processData: function(aVis, aNode) {
+    if (aNode)
+      this.push(aNode);
+    for each (let [,mapper] in Iterator(aVis.mappers)) {
       mapper.map(this);
     }
+    if (aNode)
+      this.pop();
+  },
+  push: function(aData) {
+    this.values = aData;
+    this.valueStack.push(aData);
+  },
+  pop: function() {
+    this.valueStack.pop();
+    this.values = this.valueStack[this.valueStack.length-1];
   },
   render: function (aCanvas) {
     let now = Date.now();
     if (this.startStamp === undefined)
       this.startStamp = now;
-    let tdelta = now - this.startStamp;
+    this.tdelta = now - this.startStamp;
     
     this.canvas = aCanvas;
     
-    this.canvas.fillStyle="white";
-    this.canvas.beginPath();
-    this.canvas.closePath();
+    // maybe we should white things out here...
     
-    let allDone = true;
-    for each (let [,renderer] in Iterator(this.vis.renderers)) {
-      if (!renderer.render(this, tdelta))
-        allDone = false;
+    this.allDone = true;
+    this.subRender(this.vis);
+    return this.allDone;
+  },
+  subRender: function(aVis, aNode) {
+    if (aNode)
+      this.push(aNode);
+    for each (let [,renderer] in Iterator(aVis.renderers)) {
+      if (!renderer.render(this, this.tdelta))
+        this.allDone = false;
     }
-    
-    return allDone;
+    if (aNode)
+      this.pop();
   }
 };
 
@@ -272,6 +289,163 @@ AutoColor.prototype = {
     }
   }
 };
+
+function DistinctColor(aInAttr, aOutAttr, aSaturation, aValue, aAlpha) {
+  this.inAttr = aInAttr;
+  this.outAttr = aOutAttr;
+  this.saturation = (aSaturation === undefined) ? 0.8 :  aSaturation;
+  this.value = (aValue === undefined) ? 0.8 : aValue;
+  this.alpha = (aAlpha === undefined) ? 1 : aAlpha;
+}
+DistinctColor.prototype = {
+  map: function(aVisContext) {
+    let uniqueList = [];
+    let uniqueMap = {};
+    for each (let [,item] in Iterator(aVisContext.phantoms)) {
+      let strval = item[this.inAttr].toString();
+      if (!(strval in uniqueMap)) {
+        uniqueMap[strval] = true;
+        uniqueList.push(strval);
+      }
+    }
+    uniqueList.sort();
+    let count = uniqueList.length;
+    for each (let [i,strval] in Iterator(uniqueList))
+      uniqueMap[strval] = hsva(i / count, this.saturation, this.value,
+                               this.alpha); 
+    
+    for each (let [,item] in Iterator(aVisContext.phantoms)) {
+      let strval = item[this.inAttr].toString();
+      item[this.outAttr] = uniqueMap[strval];
+    }
+  }
+}
+
+/// harcoded horizontal for now
+function LinearLayout(aNodeVis, aDefaults, aItemOffsetAttr, aItemOffAxisAttr,
+    aItemSpacingAttr, aGlobalSpacingAttr) {
+  this.nodeVis = aNodeVis;
+  this.defaults = aDefaults;
+  this.itemOffsetAttr = aItemOffsetAttr;
+  this.itemOffAxisAttr = aItemOffAxisAttr;
+  this.itemSpacingAttr = aItemSpacingAttr;
+  this.globalSpacingAttr = aGlobalSpacingAttr;
+}
+LinearLayout.prototype = {
+  map: function(aVisContext) {
+    let offset = 0;
+    
+    for each (let [,item] in Iterator(aVisContext.phantoms)) {
+      // set defaults...
+      for each (let [key, val] in Iterator(this.defaults))
+        item[key] = val;
+      aVisContext.processData(this.nodeVis, item);
+      
+      let halfOffset = aVisContext.values[this.globalSpacingAttr] +
+                       item[this.itemSpacingAttr];
+      offset += halfOffset;
+      item[this.itemOffsetAttr] = offset;
+      offset += halfOffset;
+    }
+  },
+  render: function(aVisContext) {
+    let ctx = aVisContext.canvas;
+    for each (let [,item] in Iterator(aVisContext.phantoms)) {
+      ctx.save();
+      ctx.translate(item[this.itemOffsetAttr] || 0,
+                    item[this.itemOffAxisAttr] || 0);
+      aVisContext.subRender(this.nodeVis, item);
+      ctx.restore();
+    }
+    return true;
+  }
+}
+
+function ParentEdgeMaker(aIdAttr, aParentIdAttr, aEdgeAttr) {
+  this.idAttr = aIdAttr;
+  this.parentIdAttr = aParentIdAttr;
+  this.edgeAttr = aEdgeAttr;
+}
+ParentEdgeMaker.prototype = {
+  map: function(aVisContext) {
+    let idmap = {};
+    for each (let [, item] in Iterator(aVisContext.phantoms)) {
+      let id = item[this.idAttr];
+      idmap[id] = item;
+    }
+    for each (let [, item] in Iterator(aVisContext.phantoms)) {
+      let parentId = item[this.parentIdAttr];
+      if (parentId)
+        item[this.edgeAttr] = idmap[parentId];
+    }
+  }
+}
+
+/// assumes horizontal too
+function ArcEdges(aEdgeAttr, aXAttr, aYAttr, aStrokeAttr, aStrokeWidthAttr) {
+  this.edgeAttr = aEdgeAttr;
+  this.xAttr = aXAttr;
+  this.yAttr = aYAttr;
+  this.strokeAttr = aStrokeAttr;
+  this.strokeWidthAttr = aStrokeWidthAttr;
+}
+ArcEdges.prototype = {
+  render: function(aVisContext, tdelta) {
+    let ctx = aVisContext.canvas;
+    for each (let [, item] in Iterator(aVisContext.phantoms)) {
+      let other = item[this.edgeAttr];
+      
+      if (other === undefined)
+        continue;
+      
+      let stroke = item[this.strokeAttr] || aVisContext.values[this.strokeAttr];
+      let strokeWidth = item[this.strokeWidthAttr] ||
+                        aVisContext.values[this.strokeWidthAttr] || 1;
+      ctx.strokeStyle = stroke.toString();
+      ctx.lineWidth = strokeWidth;
+      
+      let mx = (item[this.xAttr] + other[this.xAttr]) / 2;
+      let dx = Math.abs(item[this.xAttr] - other[this.xAttr]);
+      ctx.beginPath();
+      ctx.arc(mx, 0, dx/2, 0, Math.PI, true);
+      ctx.closePath();
+      ctx.stroke();
+    }
+    return true;
+  }
+}
+
+
+function Circle(aFillAttr, aStrokeAttr, aStrokeWidthAttr, aRadiusAttr) {
+  this.fillAttr = aFillAttr;
+  this.strokeAttr = aStrokeAttr;
+  this.strokeWidthAttr = aStrokeWidthAttr;
+  this.radiusAttr = aRadiusAttr;
+}
+Circle.prototype = {
+  render: function(aVisContext, tdelta) {
+    let ctx = aVisContext.canvas;
+  
+    let item = aVisContext.values;
+    let fill = item[this.fillAttr];
+    let stroke = item[this.strokeAttr];
+    let radius = item[this.radiusAttr];
+    
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2, true);
+    ctx.closePath();
+    if (fill) {
+      ctx.fillStyle = fill.toString();
+      ctx.fill();
+    }
+    if (stroke) {
+      ctx.strokeStyle = stroke.toString();
+      ctx.lineWidth = item[this.strokeWidthAttr] || 1; 
+      ctx.stroke();
+    }
+    return true;
+  }
+}
 
 function AnimatedPie(aValueAttr, aRadiusAttr, aTimeSpan) {
   this.valueAttr = aValueAttr;
@@ -355,8 +529,13 @@ AnimatedPie.prototype = {
   },
 };
 
-function kickIt(aVisContext, aCanvasNode, aCanvasContext) {
-  aCanvasContext.translate(aCanvasNode.width/2, aCanvasNode.height/2);
+function kickIt(aVisContext, aCanvasNode, aCanvasContext,
+    aAdjustLeft, aAdjustTop) {
+  if (aAdjustLeft === undefined)
+    aAdjustLeft = aCanvasNode.width / 2;
+  if (aAdjustTop === undefined)
+    aAdjustTop = aCanvasNode.height / 2;
+  aCanvasContext.translate(aAdjustLeft, aAdjustTop);
   aVisContext.render(aCanvasContext);
   aVisContext.intervalId = 
     window.setInterval(function() {

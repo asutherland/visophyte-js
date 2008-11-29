@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+ "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
+  <head>
+    <title>Animated Pie Chart</title>
+    <script src="example_data.js" type="application/javascript;version=1.8"/>
+    <script src="visophyte.js" type="application/javascript;version=1.8"/>
+    <script type="application/javascript;version=1.8">
+      var vThread;
+      var vcThread;
+      function setupVis() {
+        vMessage = new Vis()
+        vMessage.add(new Circle("fromFill", "fromStroke", "fromStrokeWidth",
+                                "radius"));
+      
+        vThread = new Vis();
+        vThread.add(new DistinctColor("from", "fromFill", 0.2, 0.9));
+        vThread.add(new DistinctColor("from", "fromStroke"));
+        vThread.add(new ParentEdgeMaker("id", "inReplyToId", "parent"));
+        vThread.add(new ArcEdges("parent", "x", "y",
+                                 "arcStroke", "arcStrokeWidth"));
+        vThread.add(new LinearLayout(vMessage,
+                                     {radius: 5, y: 0, fromStrokeWidth:1 },
+                                     "x", "y", "radius", "spacing"));
+        
+        vcThread = vThread.makeContext(conversationMessages[3], {
+            spacing: 2,
+            arcStroke: new Color(64, 64, 192, 0.2),
+            arcStrokeWidth: 3
+          });
+      }
+      
+      function brightside() {
+        setupVis();
+        var node = document.getElementById("thready");
+        kickIt(vcThread, node, node.getContext("2d"), 0, 90);
+      }
+    </script>
+  </head>
+  <body onload="brightside();">
+    <canvas id="thready" width="200" height="100"></canvas>
+  </body>
+</html>

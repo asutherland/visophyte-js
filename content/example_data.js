@@ -4,6 +4,11 @@ function Identity(aAddress) {
   this.kind = "email";
   this.value = aAddress;
 }
+Identity.prototype = {
+  toString: function() {
+    return this.kind + ":" + this.value;
+  }
+}
 
 var identities = [
   new Identity("alice@wonderland.nul"),
@@ -39,7 +44,7 @@ var conversations = [
   new Conversation("Jacob & Ian")
 ];
 
-var nextMessageId;
+var nextMessageId = 1;
 function Message(aInReplyToId, aDate, aConversation, aFrom, aToList) {
   this.id = nextMessageId++;
   this.inReplyToId = aInReplyToId;
@@ -84,4 +89,11 @@ var messages = [
       identities[2], identities),
   new Message(  10, new Date(2008,  1,  3, 22, 30), conversations[3],
       identities[1], identities),
+];
+
+var conversationMessages = [
+  messages.slice(0, 4),
+  messages.slice(4, 6),
+  messages.slice(6, 7),
+  messages.slice(7, 15)
 ];
