@@ -1,3 +1,39 @@
+/* ***** BEGIN LICENSE BLOCK *****
+ *   Version: MPL 1.1/GPL 2.0/LGPL 2.1
+ *
+ * The contents of this file are subject to the Mozilla Public License Version
+ * 1.1 (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ * http://www.mozilla.org/MPL/
+ * 
+ * Software distributed under the License is distributed on an "AS IS" basis,
+ * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
+ * for the specific language governing rights and limitations under the
+ * License.
+ *
+ * The Original Code is visophyte-js.
+ *
+ * The Initial Developer of the Original Code is
+ * Andrew Sutherland <asutherland@asutherland.org>.
+ * Portions created by the Initial Developer are Copyright (C) 2008
+ * the Initial Developer. All Rights Reserved.
+ *
+ * Contributor(s):
+ *
+ * Alternatively, the contents of this file may be used under the terms of
+ * either the GNU General Public License Version 2 or later (the "GPL"), or
+ * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
+ * in which case the provisions of the GPL or the LGPL are applicable instead
+ * of those above. If you wish to allow use of your version of this file only
+ * under the terms of either the GPL or the LGPL, and not to allow others to
+ * use your version of this file under the terms of the MPL, indicate your
+ * decision by deleting the provisions above and replace them with the notice
+ * and other provisions required by the GPL or the LGPL. If you do not delete
+ * the provisions above, a recipient may use your version of this file under
+ * the terms of any one of the MPL, the GPL or the LGPL.
+ * 
+ * ***** END LICENSE BLOCK ***** */
+
 function clamp(aVal, aLow, aHigh) {
   return Math.max(aLow, Math.min(aHigh, aVal));
 }
@@ -206,6 +242,7 @@ function VisContext(aVis, aData, aValues) {
   this.values = aValues;
   
   this._intervalId = null;
+  this._curHover = null;
   
   this.processData(this.vis);
 }
@@ -244,8 +281,6 @@ VisContext.prototype = {
     
     this.canvasNode.setAttribute("visContext", this);
     this.canvasNode.visContext = this;
-    if (this.reactionsByType["click"])
-      this.canvasNode.onclick = this._clickEventHandler;
     
     if (aAdjustLeft === undefined)
       aAdjustLeft = aCanvasNode.width / 2;
@@ -255,17 +290,27 @@ VisContext.prototype = {
     
     if (!this.render())
       this.animating = true;
+
+    if (this.reactionsByType["click"])
+      this.canvasNode.onclick = this._clickEventHandler;
+    if (this.reactionsByType["hover"]) {
+      this.canvasNode.onmousemove = this._mouseMoveHandler;
+      this.canvasNode.onmouseout = this._mouseOutHandler;
+    }
   },
   unbindFromCanvasNode: function () {
     if (this.reactionsByType["click"])
       this.canvasNode.onclick = null;
+    if (this.reactionsByType["hover"]) {
+      this.canvasNode.onmousemove = null;
+      this.canvasNode.onmouseout = null;
+    }
     
     this.canvas = null;
     this.canvasNode = null;
   },
   animationRate: Math.floor(1000/60),
   set animating(aShouldAnimate) {
-    dump("animate:" + aShouldAnimate + ", but currently: " + this.animating + "\n");
     if (aShouldAnimate != this.animating) {
       if (aShouldAnimate) {
         let dis = this;
@@ -337,22 +382,39 @@ VisContext.prototype = {
     this.canvas.restore();
   },
   _clickEventHandler: function (aEvent) {
-    dump("click handler!\n");
     try {
-      aEvent.target.visContext.react("click", aEvent);
+      aEvent.target.visContext.react("click", aEvent, true);
     } catch (ex) {
       dump("Exception in click handler: " + ex + "\n");
     }
   },
-  react: function(aAction, aEvent) {
-    let bounds = this.canvasNode.getBoundingClientRect();
-    let x = Math.floor(aEvent.clientX - bounds.left);
-    let y = Math.floor(aEvent.clientY - bounds.top);
-    this.prepHitTest(x, y);
-    this.render();
-    let hitObject = this.clearHitTest();
+  _mouseMoveHandler: function (aEvent) {
+    try {
+      aEvent.target.visContext.react("hover", aEvent, true);
+    } catch (ex) {
+      dump("Exception in move handler: " + ex + "\n");
+    }
+  },
+  _mouseOutHandler: function (aEvent) {
+    try {
+      aEvent.target.visContext.react("hover", aEvent, false);
+    } catch (ex) {
+      dump("Exception in out handler: " + ex + "\n");
+    }
+  },
+  react: function(aAction, aEvent, aDoHitTest, aExplicitTarget) {
+    let hitObject = null;
+    if (aDoHitTest) {
+      let bounds = this.canvasNode.getBoundingClientRect();
+      let x = Math.floor(aEvent.clientX - bounds.left);
+      let y = Math.floor(aEvent.clientY - bounds.top);
+      this.prepHitTest(x, y);
+      this.render();
+      hitObject = this.clearHitTest();
+    }
 
-    let actionParam = undefined;
+    let reactors = this.reactionsByType[aAction];
+    let needToAnimate = false;
     
     if (aAction == "click") {
       // there is nothing to do if nothing was clicked on!
@@ -360,15 +422,40 @@ VisContext.prototype = {
         dump("Nothing at: " + x + ", " + y + "\n");
         return;
       }
+      for each (let [, reactor] in Iterator(reactors)) {
+        if (!reactor.react(this, aAction, actionParam, hitObject))
+          needToAnimate = true;
+      }
+    }
+    else if (aAction == "hover") {
+      // do nothing if we are already hovering on this node...
+      if (this._curHover == hitObject)
+        return;
+      
+      // un-hover the last hovered guy if appropriate
+      if (this._curHover) {
+        for each (let [, reactor] in Iterator(reactors)) {
+          if (!reactor.react(this, aAction, false, this._curHover))
+            needToAnimate = true;
+        }
+      }
+      this._curHover = hitObject;
+      // generate the hover event for the new dude
+      if (this._curHover) {
+        for each (let [, reactor] in Iterator(reactors)) {
+          if (!reactor.react(this, aAction, true, this._curHover))
+            needToAnimate = true;
+        }
+      }
+    }
+    // everyone else must just use explicit targets... 
+    else {
+      for each (let [, reactor] in Iterator(reactors)) {
+        if (!reactor.react(this, aAction, undefined, aExplicitTarget))
+          needToAnimate = true;
+      }
     }
     
-    let reactors = this.reactionsByType[aAction];
-    let needToAnimate = false;
-    for each (let [, reactor] in Iterator(reactors)) {
-      if (!reactor.react(this, aAction, actionParam, hitObject))
-        needToAnimate = true;
-    }
-    dump("need to animate: " + needToAnimate + "\n");
     if (needToAnimate)
       this.animating = true;
   }
@@ -589,6 +676,137 @@ Circle.prototype = {
     return true;
   }
 }
+
+function ExternalToggler(aFirstAction, aSecondAction, aIdAttr, aStashAttr,
+    aSettings) {
+  this.doAction = aFirstAction;
+  this.undoAction = aSecondAction;
+  this.reactsTo = [aFirstAction, aSecondAction];
+  this.idAttr = aIdAttr;
+  this.stashAttr = aStashAttr;
+  this.settings = aSettings;
+}
+ExternalToggler.prototype = {
+  react: function(aVisContext, aActionType, aIsHoverEnter, aActionTarget) {
+    let needToPaint = false;
+    for each (let [, item] in Iterator(aVisContext.phantoms)) {
+      let id = item[this.idAttr];
+      if (id == aActionTarget) {
+        needToPaint = true;
+        if (aActionType == this.doAction) {
+          let stash = {};
+          for each (let [key, val] in Iterator(this.settings)) {
+            stash[key] = item[key];
+            item[key] = val;
+          }
+          item[this.stashAttr] = stash;
+        }
+        else {
+          let stash = item[this.stashAttr];
+          if (stash) {
+            for each (let [key, val] in Iterator(stash)) {
+              if (val === undefined)
+                delete item[key];
+              else
+                item[key] = val;
+            }
+            delete item[this.stashAttr];
+          }
+        }
+      }
+    }
+    return !needToPaint;
+  }
+}
+
+function HoverCallback(aCallbackThis, aCallbackFunc) {
+  this.callbackThis = aCallbackThis;
+  this.callbackFunc = aCallbackFunc;
+}
+HoverCallback.prototype = {
+  reactsTo: ["hover"],
+  react: function(aVisContext, aActionType, aIsHoverEnter, aActionTarget) {
+    this.callbackFunc.call(this.callbackThis, aActionTarget, aIsHoverEnter);
+  }
+}
+
+function HoverToggler(aStashAttr, aSettings) {
+  this.stashAttr = aStashAttr;
+  this.settings = aSettings;
+}
+HoverToggler.prototype = {
+  reactsTo: ["hover"],
+  react: function(aVisContext, aActionType, aIsHoverEnter, aActionTarget) {
+    let item = aActionTarget;
+    if (aIsHoverEnter) {
+      let stash = {};
+      for each (let [key, val] in Iterator(this.settings)) {
+        stash[key] = item[key];
+        item[key] = val;
+      }
+      item[this.stashAttr] = stash;
+    }
+    else {
+      let stash = item[this.stashAttr];
+      if (stash) {
+        for each (let [key, val] in Iterator(stash)) {
+          if (val === undefined)
+            delete item[key];
+          else
+            item[key] = val;
+        }
+        delete item[this.stashAttr];
+      }
+    }
+    return false;
+  }
+}
+
+function ConditionalThrobber(aTriggerAttr, aStateAttr, aOutAttr,
+    aFromVal, aToVal, aDuration) {
+  this.triggerAttr = aTriggerAttr;
+  this.stateAttr = aStateAttr;
+  this.outAttr = aOutAttr;
+  this.fromVal = aFromVal;
+  this.toVal = aToVal;
+  this.deltaVal = this.toVal - this.fromVal;
+  this.duration = aDuration;
+  this.halfDuration = aDuration / 2;
+}
+ConditionalThrobber.prototype = {
+  behave: function(aVisContext, tdelta) {
+    let allDone = true;
+    for each (let [,item] in Iterator(aVisContext.phantoms)) {
+      let trigger = item[this.triggerAttr];
+      let state = item[this.stateAttr];
+      // start...
+      if (trigger && !state) {
+        state = item[this.stateAttr] = tdelta;
+      }
+      // finish
+      if (!trigger && state) {
+        delete item[this.stateAttr];
+        state = undefined;
+        item[this.outAttr] = this.fromVal;
+        allDone = false;
+      }
+      if (state) {
+        let cyclePos = (tdelta - state) % this.duration;
+        let subCyclePos = cyclePos % this.halfDuration;
+        let val;
+        // from -> to
+        if (cyclePos < this.halfDuration)
+          val = this.fromVal + (this.deltaVal * subCyclePos / this.halfDuration);
+        // from <- to
+        else
+          val = this.toVal + (-this.deltaVal * subCyclePos / this.halfDuration);
+        item[this.outAttr] = val;
+        allDone = false;
+      }
+    }
+    return allDone;
+  },
+};
 
 function TriggerTween(aActionType, aFollowAttr, aOutAttr,
     aFromVal, aToVal, aDuration, aStateAttr) {

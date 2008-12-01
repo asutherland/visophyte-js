@@ -25,6 +25,10 @@
                                      "radius", 10, 5, 1000, "clickStateC"));
         vThread.add(new TriggerTween("click", "parent",
                                      "radius", 15, 5, 1000, "clickStateP"));
+        vThread.add(new HoverToggler("toggled",
+                                     {throb: true, fromFill: "white"}));
+        vThread.add(new ConditionalThrobber("throb", "throbState",
+                                            "radius", 5, 10, 900));
         vThread.add(new LinearLayout(vMessage,
                                      {radius: 5, y: 0, fromStrokeWidth:1 },
                                      "x", "y", "radius", "spacing"));
