@@ -1,4 +1,3 @@
-""
 function clamp(aVal, aLow, aHigh) {
   return Math.max(aLow, Math.min(aHigh, aVal));
 }
@@ -168,15 +167,27 @@ function hsva(hue, saturation, value, alpha) {
 }
 
 function Vis() {
+  /// initial processing only
   this.mappers = [];
+  /// behaviours update every rendering pass
+  this.behaviours = [];
+  /// renderers display the current state
   this.renderers = [];
+  /// reactors run based on user activity (hover, click), both in the
+  ///  visualization and outside of the visualization.
+  this.reactors = [];
 }
 Vis.prototype = {
   add: function(aThing) {
     if (aThing.map)
       this.mappers.push(aThing);
+    if (aThing.behave)
+      this.behaviours.push(aThing);
     if (aThing.render)
       this.renderers.push(aThing);
+    
+    if (aThing.react)
+      this.reactors.push(aThing);
   },
   makeContext: function(aData, aDefaults) {
     let context = new VisContext(this, aData, aDefaults);
@@ -193,6 +204,8 @@ function VisContext(aVis, aData, aValues) {
   }
   this.valueStack = [aValues];
   this.values = aValues;
+  
+  this._intervalId = null;
   
   this.processData(this.vis);
 }
@@ -214,15 +227,69 @@ VisContext.prototype = {
     this.valueStack.pop();
     this.values = this.valueStack[this.valueStack.length-1];
   },
-  render: function (aCanvas) {
+  bindToCanvasNode: function (aCanvasNode, aAdjustLeft, aAdjustTop) {
+    this.canvasNode = aCanvasNode;
+    this.canvas = aCanvasNode.getContext("2d");
+    this.window = aCanvasNode.ownerDocument.defaultView;
+    this.reactionsByType = {};
+    // TODO: also handle nested visualizations
+    for each (let [,reactor] in Iterator(this.vis.reactors)) {
+      for each (let [,actionType] in Iterator(reactor.reactsTo)) {
+        let reactions = this.reactionsByType[actionType];
+        if (reactions === undefined)
+          reactions = this.reactionsByType[actionType] = [];
+        reactions.push(reactor);
+      }
+    }
+    
+    this.canvasNode.setAttribute("visContext", this);
+    this.canvasNode.visContext = this;
+    if (this.reactionsByType["click"])
+      this.canvasNode.onclick = this._clickEventHandler;
+    
+    if (aAdjustLeft === undefined)
+      aAdjustLeft = aCanvasNode.width / 2;
+    if (aAdjustTop === undefined)
+      aAdjustTop = aCanvasNode.height / 2;
+    this.canvas.translate(aAdjustLeft, aAdjustTop);
+    
+    if (!this.render())
+      this.animating = true;
+  },
+  unbindFromCanvasNode: function () {
+    if (this.reactionsByType["click"])
+      this.canvasNode.onclick = null;
+    
+    this.canvas = null;
+    this.canvasNode = null;
+  },
+  animationRate: Math.floor(1000/60),
+  set animating(aShouldAnimate) {
+    dump("animate:" + aShouldAnimate + ", but currently: " + this.animating + "\n");
+    if (aShouldAnimate != this.animating) {
+      if (aShouldAnimate) {
+        let dis = this;
+        this._intervalId = this.window.setInterval(function() {
+          if(dis.render())
+            dis.animating = false;
+        }, this.animationRate);
+      }
+      else {
+        this.window.clearInterval(this._intervalId);
+        this._intervalId = null;
+      }
+    }
+  },
+  get animating() {
+    return this._intervalId != null;
+  },
+  render: function () {
     let now = Date.now();
     if (this.startStamp === undefined)
       this.startStamp = now;
     this.tdelta = now - this.startStamp;
     if (this.tdelta == 0)
       this.tdelta = 1;
-    
-    this.canvas = aCanvas;
     
     // maybe we should white things out here...
     this.canvas.save();
@@ -238,6 +305,10 @@ VisContext.prototype = {
   subRender: function(aVis, aNode) {
     if (aNode)
       this.push(aNode);
+    for each (let [,behaviour] in Iterator(aVis.behaviours)) {
+      if (!behaviour.behave(this, this.tdelta))
+        this.allDone = false;
+    }
     for each (let [,renderer] in Iterator(aVis.renderers)) {
       if (!renderer.render(this, this.tdelta))
         this.allDone = false;
@@ -264,6 +335,42 @@ VisContext.prototype = {
       this.hitNode = aItem;
     }
     this.canvas.restore();
+  },
+  _clickEventHandler: function (aEvent) {
+    dump("click handler!\n");
+    try {
+      aEvent.target.visContext.react("click", aEvent);
+    } catch (ex) {
+      dump("Exception in click handler: " + ex + "\n");
+    }
+  },
+  react: function(aAction, aEvent) {
+    let bounds = this.canvasNode.getBoundingClientRect();
+    let x = Math.floor(aEvent.clientX - bounds.left);
+    let y = Math.floor(aEvent.clientY - bounds.top);
+    this.prepHitTest(x, y);
+    this.render();
+    let hitObject = this.clearHitTest();
+
+    let actionParam = undefined;
+    
+    if (aAction == "click") {
+      // there is nothing to do if nothing was clicked on!
+      if (!hitObject) {
+        dump("Nothing at: " + x + ", " + y + "\n");
+        return;
+      }
+    }
+    
+    let reactors = this.reactionsByType[aAction];
+    let needToAnimate = false;
+    for each (let [, reactor] in Iterator(reactors)) {
+      if (!reactor.react(this, aAction, actionParam, hitObject))
+        needToAnimate = true;
+    }
+    dump("need to animate: " + needToAnimate + "\n");
+    if (needToAnimate)
+      this.animating = true;
   }
 };
 
@@ -388,10 +495,11 @@ LinearLayout.prototype = {
   }
 }
 
-function ParentEdgeMaker(aIdAttr, aParentIdAttr, aEdgeAttr) {
+function ParentEdgeMaker(aIdAttr, aParentIdAttr, aEdgeAttr, aChildrenAttr) {
   this.idAttr = aIdAttr;
   this.parentIdAttr = aParentIdAttr;
   this.edgeAttr = aEdgeAttr;
+  this.childrenAttr = aChildrenAttr;
 }
 ParentEdgeMaker.prototype = {
   map: function(aVisContext) {
@@ -402,8 +510,16 @@ ParentEdgeMaker.prototype = {
     }
     for each (let [, item] in Iterator(aVisContext.phantoms)) {
       let parentId = item[this.parentIdAttr];
-      if (parentId)
-        item[this.edgeAttr] = idmap[parentId];
+      if (parentId) {
+        let parent = idmap[parentId];
+        item[this.edgeAttr] = parent;
+        if (this.childrenAttr) {
+          let children = parent[this.childrenAttr];
+          if (children === undefined)
+            children = parent[this.childrenAttr] = [];
+          children.push(item);
+        }
+      }
     }
   }
 }
@@ -435,8 +551,6 @@ ArcEdges.prototype = {
       let dx = Math.abs(item[this.xAttr] - other[this.xAttr]);
       ctx.beginPath();
       ctx.arc(mx, 0, dx/2, 0, Math.PI, true);
-      ctx.closePath();
-      aVisContext.hitTest(item);
       ctx.stroke();
     }
     return true;
@@ -475,6 +589,54 @@ Circle.prototype = {
     return true;
   }
 }
+
+function TriggerTween(aActionType, aFollowAttr, aOutAttr,
+    aFromVal, aToVal, aDuration, aStateAttr) {
+  this.reactsTo = [aActionType];
+  this.followAttr = aFollowAttr;
+  this.outAttr = aOutAttr;
+  this.fromVal = aFromVal;
+  this.toVal = aToVal;
+  this.deltaVal = this.toVal - this.fromVal;
+  this.duration = aDuration;
+  this.stateAttr = aStateAttr;
+}
+TriggerTween.prototype = {
+  _follow: function(aItem) {
+    let thing = aItem[this.followAttr];
+    if (thing == null)
+      return [];
+    else if (thing instanceof Array)
+      return thing;
+    else
+      return [thing];
+  },
+  behave: function(aVisContext, tdelta) {
+    let allDone = true;
+    for each (let [,item] in Iterator(aVisContext.phantoms)) {
+      if (item[this.stateAttr]) {
+        let rdelta = tdelta - item[this.stateAttr];
+        if (rdelta > this.duration) {
+          item[this.outAttr] = this.toVal;
+          delete item[this.stateAttr];
+        }
+        else {
+          item[this.outAttr] = this.fromVal +
+                               (this.deltaVal * rdelta / this.duration);
+          allDone = false;
+        }
+      }
+    }
+    return allDone;
+  },
+  react: function(aVisContext, aActionType, aActionParam, aActionTarget) {
+    for each (let [,item] in Iterator(this._follow(aActionTarget))) {
+      item[this.stateAttr] = aVisContext.tdelta;
+    }
+    // we do need to animate!
+    return false;
+  }
+};
 
 function AnimatedPie(aValueAttr, aRadiusAttr, aTimeSpan) {
   this.valueAttr = aValueAttr;
@@ -555,16 +717,11 @@ AnimatedPie.prototype = {
     ctx.fill();
     
     return tdelta > this.timeSpan;
-  },
+  }
 };
 
 function kickIt(aVisContext, aCanvasNode, aCanvasContext,
     aAdjustLeft, aAdjustTop) {
-  if (aAdjustLeft === undefined)
-    aAdjustLeft = aCanvasNode.width / 2;
-  if (aAdjustTop === undefined)
-    aAdjustTop = aCanvasNode.height / 2;
-  aCanvasContext.translate(aAdjustLeft, aAdjustTop);
   if (!aVisContext.render(aCanvasContext)) {
     aVisContext.intervalId = 
       window.setInterval(function() {

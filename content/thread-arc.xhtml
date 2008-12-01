@@ -17,9 +17,14 @@
         vThread = new Vis();
         vThread.add(new DistinctColor("from", "fromFill", 0.2, 0.9));
         vThread.add(new DistinctColor("from", "fromStroke"));
-        vThread.add(new ParentEdgeMaker("id", "inReplyToId", "parent"));
+        vThread.add(new ParentEdgeMaker("id", "inReplyToId", "parent",
+                                        "children"));
         vThread.add(new ArcEdges("parent", "x", "y",
                                  "arcStroke", "arcStrokeWidth"));
+        vThread.add(new TriggerTween("click", "children",
+                                     "radius", 10, 5, 1000, "clickStateC"));
+        vThread.add(new TriggerTween("click", "parent",
+                                     "radius", 15, 5, 1000, "clickStateP"));
         vThread.add(new LinearLayout(vMessage,
                                      {radius: 5, y: 0, fromStrokeWidth:1 },
                                      "x", "y", "radius", "spacing"));
@@ -29,25 +34,12 @@
             arcStroke: new Color(64, 64, 192, 0.2),
             arcStrokeWidth: 3
           });
-      }
-      
-      function brightside() {
-        setupVis();
-        var node = document.getElementById("thready");
-        kickIt(vcThread, node, node.getContext("2d"), 0, 90);
-      }
-      
-      function clicky(aEvent) {
-        var canvasNode = document.getElementById("thready");
-        var bounds = canvasNode.getBoundingClientRect();
-        vcThread.prepHitTest(aEvent.clientX - bounds.left,
-                             aEvent.clientY - bounds.top);
-        vcThread.render(canvasNode.getContext("2d"));
-        var hit = vcThread.clearHitTest();
+        
+        vcThread.bindToCanvasNode(document.getElementById("thready"), 0, 90);
       }
     </script>
   </head>
-  <body onload="brightside();">
-    <canvas id="thready" width="200" height="100" onclick="clicky(event);"></canvas>
+  <body onload="setupVis();">
+    <canvas id="thready" width="200" height="100"></canvas>
   </body>
 </html>
