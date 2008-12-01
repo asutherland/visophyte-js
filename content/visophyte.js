@@ -385,7 +385,8 @@ VisContext.prototype = {
     try {
       aEvent.target.visContext.react("click", aEvent, true);
     } catch (ex) {
-      dump("Exception in click handler: " + ex + "\n");
+      dump("Exception in click handler: " + ex.fileName + ":" + ex.lineNumber +
+           ": " + ex + "\n");
     }
   },
   _mouseMoveHandler: function (aEvent) {
@@ -404,10 +405,11 @@ VisContext.prototype = {
   },
   react: function(aAction, aEvent, aDoHitTest, aExplicitTarget) {
     let hitObject = null;
+    let x, y;
     if (aDoHitTest) {
       let bounds = this.canvasNode.getBoundingClientRect();
-      let x = Math.floor(aEvent.clientX - bounds.left);
-      let y = Math.floor(aEvent.clientY - bounds.top);
+      x = Math.floor(aEvent.clientX - bounds.left);
+      y = Math.floor(aEvent.clientY - bounds.top);
       this.prepHitTest(x, y);
       this.render();
       hitObject = this.clearHitTest();
@@ -423,7 +425,7 @@ VisContext.prototype = {
         return;
       }
       for each (let [, reactor] in Iterator(reactors)) {
-        if (!reactor.react(this, aAction, actionParam, hitObject))
+        if (!reactor.react(this, aAction, undefined, hitObject))
           needToAnimate = true;
       }
     }
@@ -805,7 +807,7 @@ ConditionalThrobber.prototype = {
       }
     }
     return allDone;
-  },
+  }
 };
 
 function TriggerTween(aActionType, aFollowAttr, aOutAttr,
