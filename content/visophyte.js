@@ -584,6 +584,39 @@ LinearLayout.prototype = {
   }
 }
 
+function TimeLayout(aNodeVis) {
+
+}
+TimeLayout.prototype = {
+  map: function(aVisContext) {
+    let offset = 0;
+    
+    for each (let [,item] in Iterator(aVisContext.phantoms)) {
+      // set defaults...
+      for each (let [key, val] in Iterator(this.defaults))
+        item[key] = val;
+      aVisContext.processData(this.nodeVis, item);
+      
+      let halfOffset = aVisContext.values[this.globalSpacingAttr] +
+                       item[this.itemSpacingAttr];
+      offset += halfOffset;
+      item[this.itemOffsetAttr] = offset;
+      offset += halfOffset;
+    }
+  },
+  render: function(aVisContext) {
+    let ctx = aVisContext.canvas;
+    for each (let [,item] in Iterator(aVisContext.phantoms)) {
+      ctx.save();
+      ctx.translate(item[this.itemOffsetAttr] || 0,
+                    item[this.itemOffAxisAttr] || 0);
+      aVisContext.subRender(this.nodeVis, item);
+      ctx.restore();
+    }
+    return true;
+  }  
+}
+
 function ParentEdgeMaker(aIdAttr, aParentIdAttr, aEdgeAttr, aChildrenAttr) {
   this.idAttr = aIdAttr;
   this.parentIdAttr = aParentIdAttr;
