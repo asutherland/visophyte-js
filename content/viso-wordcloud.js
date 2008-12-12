@@ -249,7 +249,7 @@ WordBox.prototype = {
     // make sure to clear out the previous path!
     ctx.beginPath();
     ctx.mozPathText(this.word);
-    dump("word width: " + width + "\n");
+    dump("word '" + this.word + "' width: " + width + "\n");
     
     let gridXSteps = Math.floor((width + (GRID_SIZE - 1))/ GRID_SIZE);
     let gridWidth = gridXSteps * GRID_SIZE;
@@ -306,7 +306,7 @@ WordBox.prototype = {
     for (let iNeighbor = startNeighbor; iNeighbor != endNeighbor;
         iNeighbor = (iNeighbor+1) % NDIRECTIONS) {
      let neighbor = this.neighbors[iNeighbor];
-     if (neighbor !== undefined)
+     if (neighbor != null)
        return iNeighbor;
     }
     return false;
@@ -360,8 +360,11 @@ WordBox.prototype = {
     else
       ctx.translate(this.selfBox.x, this.selfBox.bottom);
     ctx.font = this.size + FONT_STRING;
-    ctx.fillStyle = this.phantom[this.puzzle.fillAttr].toString();
+    let fill = this.phantom[this.puzzle.fillAttr].toString();
+    ctx.fillStyle = fill;
     ctx.fillText(this.word, 0, 0);
+    //ctx.lineWidth = 0.5;
+    //ctx.strokeStyle = fill;
     //ctx.strokeText(this.word, 0, 0);
     ctx.restore();
     
@@ -441,7 +444,7 @@ WordCloud.prototype = {
     // -- first pass, size all the words
     let wordBoxes = [];
     for each (let [, item] in Iterator(this.orderedWordList)) {
-      let size = item[this.popularityAttr] * 2 + 6;
+      let size = item[this.popularityAttr] * 2 + 8;
       
       wordBoxes.push(new WordBox(puzzle, item, item[this.wordAttr], size));
     }
@@ -460,8 +463,6 @@ WordCloud.prototype = {
 
   },
   render: function(aVisContext) {
-    let now = Date.now();
-    dump("+++ repaint start\n");
     let ctx = aVisContext.canvas;
     ctx.textAlign = "left";
     
@@ -472,15 +473,9 @@ WordCloud.prototype = {
     ctx.strokeStyle = "black";
     this.rootWord.render(ctx);
     
-    dump("--- repaint done: " + (Date.now() - now) + "\n");
-    
     return true;
   },
   fastHitTest: function(aVisContext) {
-    let now = Date.now();
-    dump("??? fasthittest start\n");
-    let ret = this.rootWord.fastHitTest(aVisContext);
-    dump("!!! fasthittest done: " + (Date.now() - now) + "\n");
-    return ret;
+    return this.rootWord.fastHitTest(aVisContext);
   }
 };

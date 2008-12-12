@@ -17,16 +17,23 @@
         rhubarb: 2, plastic: 2, key: 2, marker: 2, potato: 2, shoes: 2,
         soup: 1, crackers: 1, garlic: 1, legume: 1, ping: 1, pong: 1
       };
-      var words = [{word: word, count: count, fill: "black"} for each
+      var words = [{word: word, count: count} for each
                    ([word, count] in Iterator(sourceWords))];
+    
+      function clickFunc(aPhantom) {
+        dump("You clicked on the word: " + aPhantom.word + "\n");
+      }
     
       var vCloud;
       var vcCloud;
       function setupVis() {
         vCloud = new Vis();
+        vCloud.add(new DistinctColor("word", "fill", 0.4, 0.9));
+        vCloud.add(new LinearNorm("count", "normCount", 1, 36));
+        vCloud.add(new ClickCallback(null, clickFunc));
         vCloud.add(new HoverToggler("toggled",
                                     {fill: "red"}));
-        vCloud.add(new WordCloud("word", "count", "fill"));
+        vCloud.add(new WordCloud("word", "normCount", "fill"));
         
         vcCloud = vCloud.makeContext(words, {});
         

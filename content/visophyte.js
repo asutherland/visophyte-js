@@ -392,7 +392,6 @@ VisContext.prototype = {
       if (this.hitNode)
         break;
     }
-    dump("fast hit test returning: " + this.hitNode + "\n");
   },
   _clickEventHandler: function (aEvent) {
     try {
@@ -432,7 +431,7 @@ VisContext.prototype = {
     }
 
     let reactors = this.reactionsByType[aAction];
-    let needToAnimate = false;
+    let needToRender = false;
     
     if (aAction == "click") {
       // there is nothing to do if nothing was clicked on!
@@ -442,7 +441,7 @@ VisContext.prototype = {
       }
       for each (let [, reactor] in Iterator(reactors)) {
         if (!reactor.react(this, aAction, undefined, hitObject))
-          needToAnimate = true;
+          needToRender = true;
       }
     }
     else if (aAction == "hover") {
@@ -454,7 +453,7 @@ VisContext.prototype = {
       if (this._curHover) {
         for each (let [, reactor] in Iterator(reactors)) {
           if (!reactor.react(this, aAction, false, this._curHover))
-            needToAnimate = true;
+            needToRender = true;
         }
       }
       this._curHover = hitObject;
@@ -462,7 +461,7 @@ VisContext.prototype = {
       if (this._curHover) {
         for each (let [, reactor] in Iterator(reactors)) {
           if (!reactor.react(this, aAction, true, this._curHover))
-            needToAnimate = true;
+            needToRender = true;
         }
       }
     }
@@ -470,13 +469,13 @@ VisContext.prototype = {
     else {
       for each (let [, reactor] in Iterator(reactors)) {
         if (!reactor.react(this, aAction, undefined, aExplicitTarget))
-          needToAnimate = true;
+          needToRender = true;
       }
     }
     
-    dump("animate?: " + needToAnimate + "\n");
-    if (needToAnimate && !this.render()) {
-      dump("%%% animating!!!\n");
+    // if we need to render, render.  make sure to set animating if the render
+    //  indicates that animation is required.
+    if (needToRender && !this.render()) {
       this.animating = true;
     }
   }
@@ -495,7 +494,7 @@ function LinearNorm(aIn, aOut, aOutLow, aOutHigh, aInLow, aInHigh) {
 LinearNorm.prototype = {
   map: function(aVisContext) {
     // normalize the in-space
-    for each (let [, item] in aVisContext.phantoms) {
+    for each (let [, item] in Iterator(aVisContext.phantoms)) {
       let inVal = item[this.inAttr];
       if ((this.inLow == null) || (inVal < this.inLow))
         this.inLow = inVal;
@@ -508,7 +507,7 @@ LinearNorm.prototype = {
     let outOffset = this.outLow;
     let outScale = this.outHigh - this.outLow;
     // normalize to out-space
-    for each (let [, item] in aVisContext.phantoms) {
+    for each (let [, item] in Iterator(aVisContext.phantoms)) {
       let inVal = item[this.inAttr];
       
       item[this.outAttr] = outOffset + outScale * (inVal - inOffset) / inSpan;  
@@ -771,7 +770,19 @@ ExternalToggler.prototype = {
     }
     return !needToPaint;
   }
+};
+
+function ClickCallback(aCallbackThis, aCallbackFunc) {
+  this.callbackThis = aCallbackThis;
+  this.callbackFunc = aCallbackFunc;
 }
+ClickCallback.prototype = {
+  reactsTo: ["click"],
+  react: function(aVisContext, aActionType, aIgnore, aActionTarget) {
+    this.callbackFunc.call(this.callbackThis, aActionTarget);
+  }
+}
+
 
 function HoverCallback(aCallbackThis, aCallbackFunc) {
   this.callbackThis = aCallbackThis;
