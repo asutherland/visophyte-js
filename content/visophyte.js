@@ -212,6 +212,8 @@ function Vis() {
   /// reactors run based on user activity (hover, click), both in the
   ///  visualization and outside of the visualization.
   this.reactors = [];
+  /// track whether all of our renderers have fast hit test mechanisms
+  this.hasFastHitTest = true;
 }
 Vis.prototype = {
   add: function(aThing) {
@@ -219,8 +221,11 @@ Vis.prototype = {
       this.mappers.push(aThing);
     if (aThing.behave)
       this.behaviours.push(aThing);
-    if (aThing.render)
+    if (aThing.render) {
       this.renderers.push(aThing);
+      if (aThing.fastHitTest == null)
+        this.hasFastHitTest = false;
+    }
     
     if (aThing.react)
       this.reactors.push(aThing);
@@ -381,6 +386,14 @@ VisContext.prototype = {
     }
     this.canvas.restore();
   },
+  fastHitTest: function() {
+    for each (let [,renderer] in Iterator(this.vis.renderers)) {
+      this.hitNode = renderer.fastHitTest(this);
+      if (this.hitNode)
+        break;
+    }
+    dump("fast hit test returning: " + this.hitNode + "\n");
+  },
   _clickEventHandler: function (aEvent) {
     try {
       aEvent.target.visContext.react("click", aEvent, true);
@@ -411,7 +424,10 @@ VisContext.prototype = {
       x = Math.floor(aEvent.clientX - bounds.left);
       y = Math.floor(aEvent.clientY - bounds.top);
       this.prepHitTest(x, y);
-      this.render();
+      if (this.vis.hasFastHitTest)
+        this.fastHitTest();
+      else
+        this.render();
       hitObject = this.clearHitTest();
     }
 
@@ -458,8 +474,11 @@ VisContext.prototype = {
       }
     }
     
-    if (needToAnimate)
+    dump("animate?: " + needToAnimate + "\n");
+    if (needToAnimate && !this.render()) {
+      dump("%%% animating!!!\n");
       this.animating = true;
+    }
   }
 };
 

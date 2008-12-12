@@ -44,6 +44,7 @@ const NEIGHBOR_SIGNS = [
   [-1, 0], // west
   [-1, 1] // north-west
 ];
+const DIR_SELF = -1;
 const DIR_PREF_PERP = [true, false, true, false, true, false, true, false];
 const OPPOSITE_DIR = 4;
 const NDIRECTIONS = NEIGHBOR_SIGNS.length;
@@ -111,6 +112,11 @@ Rect.prototype = {
     return ((this.h <= otherBox.w) &&
             (this.w <= otherBox.h));
   },
+  containsPoint: function(x, y) {
+    return ((x >= this.x) && (y >= this.y) && 
+            (x <= (this.x + this.w)) &&
+            (y <= (this.y + this.h)));
+  },
   /**
    * Rotating happens without position changes!
    */
@@ -118,6 +124,29 @@ Rect.prototype = {
     [this.w, this.h] = [this.h, this.w];
   },
   // ====== Wacky Neighbor Logix =====
+  getPointNeighborDir: function(x, y) {
+    let qx, qy;
+    if (x < this.x)
+      qx = -1;
+    else if (x > (this.x + this.w))
+      qx = 1;
+    else
+      qx = 0;
+    if (y < this.y)
+      qy = 1;
+    else if (y > (this.y + this.h))
+      qy = -1;
+    else
+      qy = 0;
+    
+    if (!qx && !qy)
+      return DIR_SELF;
+    for (let iNeighbor = 0; iNeighbor < NEIGHBOR_SIGNS.length; iNeighbor++) {
+      let [nx, ny] = NEIGHBOR_SIGNS[iNeighbor];
+      if ((nx == qx) && (ny == qy))
+        return iNeighbor;
+    }
+  },
   placeNeighborly: function(containingBox, neighborDir) {
     let [qx, qy] = NEIGHBOR_SIGNS[neighborDir];
     if (qx == 1) {
@@ -185,14 +214,14 @@ Rect.prototype = {
 let Box = Rect;
 
 function FancyBox(aboveLines) {
-  this.aboveLines = aboveLines;
+  // er, let's ignore the aboveLines now since we don't use them
 }
 FancyBox.prototype = {
-  
 };
 
-function WordBox(aPuzzle, aWord, aSize) {
+function WordBox(aPuzzle, aPhantom, aWord, aSize) {
   this.puzzle = aPuzzle;
+  this.phantom = aPhantom;
   this.word = aWord;
   this.size = aSize;
   
@@ -331,15 +360,32 @@ WordBox.prototype = {
     else
       ctx.translate(this.selfBox.x, this.selfBox.bottom);
     ctx.font = this.size + FONT_STRING;
+    ctx.fillStyle = this.phantom[this.puzzle.fillAttr].toString();
     ctx.fillText(this.word, 0, 0);
     //ctx.strokeText(this.word, 0, 0);
     ctx.restore();
+    
+    let visContext = this.puzzle.visContext;
+    if (visContext.hitTestEnabled) {
+      if (this.selfBox.containsPoint(visContext.testX, visContext.testY))
+        visContext.hitNode = this.phantom;
+    }
     
     for (let iNeighbor = 0; iNeighbor < NEIGHBOR_SIGNS.length; iNeighbor++) {
       let neighbor = this.neighbors[iNeighbor];
       if (neighbor != null)
         neighbor.render(ctx);
     }    
+  },
+  fastHitTest: function(aVisContext) {
+    let dir = this.selfBox.getPointNeighborDir(aVisContext.testX, aVisContext.testY);
+    if (dir == DIR_SELF)
+      return this.phantom;
+    let neighbor = this.neighbors[dir]; 
+    if (neighbor)
+      return neighbor.fastHitTest(aVisContext);
+    else
+      return null;
   },
   placeCenterAt: function (cx, cy) {
     this.selfBox.centerX = cx;
@@ -366,37 +412,38 @@ WordBox.prototype = {
   },
 };
 
-function WordCloud() {
+function WordCloud(aWordAttr, aPopularityAttr, aFillAttr) {
+  this.wordAttr = aWordAttr;
+  this.popularityAttr = aPopularityAttr;
+  this.fillAttr = aFillAttr;
+  
   this.rootWord = null;
   this.puzzle = {};
 }
 WordCloud.prototype = {
-  _wordTupleDescendingSorter: function (a, b) {
-    return b[1] - a[1];
+  _wordDescendingSorter: function (a, b) {
+    return b[this.popularityAttr] - a[this.popularityAttr];
   },
   map: function (aVisContext) {
     // -- prep
-    let wordMap = aVisContext.phantoms[0].__proto__;
-    
-    // make a list of the tuples
-    let orderedWordList = [keyVal for each (keyVal in Iterator(wordMap))];
+    let orderedWordList = aVisContext.phantoms.concat();
     // and sort them so the most popular words come first
-    orderedWordList.sort(this._wordTupleDescendingSorter);
+    orderedWordList.sort(this._wordDescendingSorter);
     
     this.orderedWordList = orderedWordList;
   },
   layout: function (aVisContext) {
     let puzzle = this.puzzle = {
-      visContext: aVisContext, canvas: aVisContext.canvas};
-    let orderedWordList = this.orderedWordList;
+      visContext: aVisContext, canvas: aVisContext.canvas,
+      wordAttr: this.wordAttr, popularityAttr: this.popularityAttr,
+      fillAttr: this.fillAttr};
     
     // -- first pass, size all the words
     let wordBoxes = [];
-    for (let iWord = 0; iWord < orderedWordList.length; iWord++) {
-      let [word, wordCount] = orderedWordList[iWord];
-      let size = wordCount * 2 + 6;
+    for each (let [, item] in Iterator(this.orderedWordList)) {
+      let size = item[this.popularityAttr] * 2 + 6;
       
-      wordBoxes.push(new WordBox(puzzle, word, size));
+      wordBoxes.push(new WordBox(puzzle, item, item[this.wordAttr], size));
     }
 
     // -- second pass, actually layout!
@@ -413,6 +460,8 @@ WordCloud.prototype = {
 
   },
   render: function(aVisContext) {
+    let now = Date.now();
+    dump("+++ repaint start\n");
     let ctx = aVisContext.canvas;
     ctx.textAlign = "left";
     
@@ -423,6 +472,15 @@ WordCloud.prototype = {
     ctx.strokeStyle = "black";
     this.rootWord.render(ctx);
     
+    dump("--- repaint done: " + (Date.now() - now) + "\n");
+    
     return true;
   },
+  fastHitTest: function(aVisContext) {
+    let now = Date.now();
+    dump("??? fasthittest start\n");
+    let ret = this.rootWord.fastHitTest(aVisContext);
+    dump("!!! fasthittest done: " + (Date.now() - now) + "\n");
+    return ret;
+  }
 };

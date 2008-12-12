@@ -7,7 +7,7 @@
     <script src="visophyte.js" type="application/javascript;version=1.8"/>
     <script src="viso-wordcloud.js" type="application/javascript;version=1.8"/>
     <script type="application/javascript;version=1.8">
-      var words = {
+      var sourceWords = {
         Mozilla: 30, Open: 15,
         Thunderbird: 10, gloda: 8,
         IMAP: 6, mbox: 6, Mooooooo: 6,
@@ -17,14 +17,18 @@
         rhubarb: 2, plastic: 2, key: 2, marker: 2, potato: 2, shoes: 2,
         soup: 1, crackers: 1, garlic: 1, legume: 1, ping: 1, pong: 1
       };
+      var words = [{word: word, count: count, fill: "black"} for each
+                   ([word, count] in Iterator(sourceWords))];
     
       var vCloud;
       var vcCloud;
       function setupVis() {
         vCloud = new Vis();
-        vCloud.add(new WordCloud());
+        vCloud.add(new HoverToggler("toggled",
+                                    {fill: "red"}));
+        vCloud.add(new WordCloud("word", "count", "fill"));
         
-        vcCloud = vCloud.makeContext([words], {});
+        vcCloud = vCloud.makeContext(words, {});
         
         vcCloud.bindToCanvasNode(document.getElementById("wordy"), 0, 0);
       }
