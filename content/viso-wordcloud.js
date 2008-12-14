@@ -54,75 +54,11 @@ const GRID_SIZE = 2;
 
 const FONT_STRING = "px sans-serif";
 
-function Rect(x, y, w, h) {
-  this.x = x;
-  this.y = y;
-  this.w = w;
-  this.h = h;
-  
-  this.maxDimVal = Math.max(this.w, this.h);
-  this.minDimVal = Math.min(this.w, this.h);
+function NRect() {
+  Rect.apply(this, arguments);
 }
-Rect.prototype = {
-  get left() {
-    return this.x;
-  },
-  set left(nx) {
-    this.x = nx;
-  },
-  get top() {
-    return this.y;
-  },
-  set top(ny) {
-    this.y = ny;
-  },
-  get right() {
-    return this.x + this.w;
-  },
-  set right(nr) {
-    this.x = nr - this.w;
-  },
-  get bottom() {
-    return this.y + this.h;
-  },
-  set bottom(nb) {
-    this.y = nb - this.h;
-  },
-  get centerX() {
-    return this.x + this.w / 2;
-  },
-  set centerX(ncx) {
-   this.x = ncx - this.w / 2;
-  },
-  get centerY() {
-    return this.y + this.h / 2;
-  },
-  set centerY(ncy) {
-    this.y = ncy - this.h / 2;
-  },
-  fitsIn: function (otherBox) {
-    return ((this.maxDimVal <= otherBox.maxDimVal) &&
-            (this.minDimVal <= otherBox.minDimVal));
-  },
-  fitsNormal: function(otherBox) {
-    return ((this.w <= otherBox.w) &&
-            (this.h <= otherBox.h));
-  },
-  fitsRotated: function(otherBox) {
-    return ((this.h <= otherBox.w) &&
-            (this.w <= otherBox.h));
-  },
-  containsPoint: function(x, y) {
-    return ((x >= this.x) && (y >= this.y) && 
-            (x <= (this.x + this.w)) &&
-            (y <= (this.y + this.h)));
-  },
-  /**
-   * Rotating happens without position changes!
-   */
-  rotate: function() {
-    [this.w, this.h] = [this.h, this.w];
-  },
+NRect.prototype = {
+  __proto__: Rect.prototype,
   // ====== Wacky Neighbor Logix =====
   getPointNeighborDir: function(x, y) {
     let qx, qy;
@@ -205,13 +141,8 @@ Rect.prototype = {
       height = gridRect.bottom - y;
     }
     return new Rect(x, y, width, height);
-  },
-  toString: function() {
-    return "[x: " + this.x + ", y: " + this.y + ", w: " + this.w + ", h:" +
-      this.h + "]";
   }
 };
-let Box = Rect;
 
 function FancyBox(aboveLines) {
   // er, let's ignore the aboveLines now since we don't use them
@@ -285,7 +216,7 @@ WordBox.prototype = {
     // nuke the fully empty above lines
     aboveLines.splice((highestY / -GRID_SIZE) + 1);
     
-    this.selfBox = new Rect(0, 0, gridWidth, -highestY);
+    this.selfBox = new NRect(0, 0, gridWidth, -highestY);
     this.selfFox = new FancyBox(aboveLines);
         
     dump("bounded " + this.word + " to " + this.selfBox + "\n");
@@ -452,7 +383,7 @@ WordCloud.prototype = {
     // -- second pass, actually layout!
     let iWordBoxes = Iterator(wordBoxes);
     this.rootWord = iWordBoxes.next()[1];
-    this.rootWord.controlBox = new Rect(0, 0,
+    this.rootWord.controlBox = new NRect(0, 0,
         aVisContext.canvasNode.width, aVisContext.canvasNode.height);
     this.rootWord.placeCenterAt(Math.floor(aVisContext.canvasNode.width / 2),
         Math.floor(aVisContext.canvasNode.height / 2));

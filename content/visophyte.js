@@ -38,6 +38,58 @@ function clamp(aVal, aLow, aHigh) {
   return Math.max(aLow, Math.min(aHigh, aVal));
 }
 
+function Rect(x, y, w, h) {
+  this.x = x;
+  this.y = y;
+  this.w = w;
+  this.h = h;
+  
+  this.maxDimVal = Math.max(this.w, this.h);
+  this.minDimVal = Math.min(this.w, this.h);
+}
+Rect.prototype = {
+  get left() {
+    return this.x;
+  },
+  set left(nx) {
+    this.x = nx;
+  },
+  get top() {
+    return this.y;
+  },
+  set top(ny) {
+    this.y = ny;
+  },
+  get right() {
+    return this.x + this.w;
+  },
+  set right(nr) {
+    this.x = nr - this.w;
+  },
+  get bottom() {
+    return this.y + this.h;
+  },
+  set bottom(nb) {
+    this.y = nb - this.h;
+  },
+  get centerX() {
+    return this.x + this.w / 2;
+  },
+  set centerX(ncx) {
+   this.x = ncx - this.w / 2;
+  },
+  get centerY() {
+    return this.y + this.h / 2;
+  },
+  set centerY(ncy) {
+    this.y = ncy - this.h / 2;
+  },
+  toString: function() {
+    return "[x: " + this.x + ", y: " + this.y + ", w: " + this.w + ", h:" +
+      this.h + "]";
+  }
+};
+
 function Color(r, g, b, a) {
   this.r = r;
   this.g = g;
@@ -238,7 +290,7 @@ Vis.prototype = {
 
 function VisContext(aVis, aData, aValues) {
   this.vis = aVis;
-  this.data = aData;
+  this.data = aData.concat();
   this.phantoms = [];
   for each (let [,item] in Iterator(this.data)) {
     this.phantoms.push({__proto__: item});
@@ -481,6 +533,25 @@ VisContext.prototype = {
   }
 };
 
+function ValueMapper(aIn, aOut, aValueMap, aDefaultVal) {
+  this.inAttr = aIn;
+  this.outAttr = aOut;
+  this.valueMap = aValueMap;
+  this.defaultVal = aDefaultVal;
+}
+ValueMapper.prototype = {
+  map: function(aVisContext) {
+    for each (let [, item] in Iterator(aVisContext.phantoms)) {
+      let inVal = item[this.inAttr];
+      
+      if (inVal in this.valueMap)
+        item[this.outAttr] = this.valueMap[inVal];
+      else
+        item[this.outAttr] = this.defaultVal;
+    }
+  }
+};
+
 function LinearNorm(aIn, aOut, aOutLow, aOutHigh, aInLow, aInHigh) {
   this.inAttr = aIn;
   this.outAttr = aOut;
@@ -600,36 +671,108 @@ LinearLayout.prototype = {
     }
     return true;
   }
-}
+};
 
-function TimeLayout(aNodeVis) {
-
+function TimeLayout(aNodeVis, aLineHeight, aStartAttr, aFinishAttr, aDefaults,
+    aEventsAttr, aEventFillMap) {
+  this.nodeVis = aNodeVis;
+  this.lineHeight = aLineHeight;
+  this.startAttr = aStartAttr;
+  this.finishAttr = aFinishAttr;
+  this.defaults = aDefaults;
+  this.eventsAttr = aEventsAttr;
+  this.eventFillMap = aEventFillMap;
 }
 TimeLayout.prototype = {
-  map: function(aVisContext) {
-    let offset = 0;
+  layout: function(aVisContext) {
+    let lineOffsets = [];
     
+    let first = undefined, last = undefined;
+
     for each (let [,item] in Iterator(aVisContext.phantoms)) {
       // set defaults...
       for each (let [key, val] in Iterator(this.defaults))
         item[key] = val;
       aVisContext.processData(this.nodeVis, item);
       
-      let halfOffset = aVisContext.values[this.globalSpacingAttr] +
-                       item[this.itemSpacingAttr];
-      offset += halfOffset;
-      item[this.itemOffsetAttr] = offset;
-      offset += halfOffset;
+      // figure out line placement
+      let start = item[this.startAttr];
+      let finish = item[this.finishAttr];
+      
+      if (first === undefined) {
+        first = start;
+        last = start + 1;
+      }
+      else
+        first = Math.min(start, first);
+      if (finish !== undefined)
+        last = Math.max(finish, last);
+    }
+    
+    let horizScale = aVisContext.canvasNode.width / (last - first);
+
+    for each (let [,item] in Iterator(aVisContext.phantoms)) {
+      // figure out line placement
+      let start = item[this.startAttr];
+      // if it's not finished, the finish is the most recent timestamp we've seen
+      let finish = item[this.finishAttr] || last;
+
+      let lineToUse = null;
+      for (let iLine = 0; iLine < lineOffsets.length; iLine++) {
+        if (start >= lineOffsets[iLine]) {
+          lineToUse = iLine;
+          break;
+        }
+      }
+      if (lineToUse != null)
+        lineOffsets[lineToUse] = finish;
+      else {
+        lineToUse = lineOffsets.length;
+        lineOffsets.push(finish);
+      }
+      
+      item.rect = new Rect((start - first) * horizScale,
+                           lineToUse * this.lineHeight,
+                           (finish - start) * horizScale,
+                           this.lineHeight-2);
+      
+      // this is an egregious hack and violation of our limited semantics...
+      // this wildly needs to be generalized, along with some other stuff...
+      if (this.eventsAttr) {
+        let eventStamps = item[this.eventsAttr];
+        if (eventStamps) {
+          let eventRects = item.eventRects = [];
+          for each (let [,eventInfo] in Iterator(eventStamps)) {
+            let [eventStamp, eventType] = eventInfo;
+            let x = (eventStamp - first) * horizScale;
+            eventRects.push([new Rect(x-1, lineToUse*this.lineHeight + 1,
+                                     2, this.lineHeight-4),
+                             this.eventFillMap[eventType]]);
+          }
+        }
+      }
     }
   },
   render: function(aVisContext) {
+    if (!aVisContext.values.timeLaidOut) {
+      this.layout(aVisContext);
+      aVisContext.values.timeLaidOut = true;
+    }
+    
     let ctx = aVisContext.canvas;
     for each (let [,item] in Iterator(aVisContext.phantoms)) {
-      ctx.save();
-      ctx.translate(item[this.itemOffsetAttr] || 0,
-                    item[this.itemOffAxisAttr] || 0);
       aVisContext.subRender(this.nodeVis, item);
-      ctx.restore();
+      // egregious, etc.
+      if (item.eventRects) {
+        for each (let [,eventRectInfo] in Iterator(item.eventRects)) {
+          let [eventRect, eventFill] = eventRectInfo;
+          ctx.fillStyle = eventFill;
+          ctx.beginPath();
+          ctx.rect(eventRect.x, eventRect.y, eventRect.w, eventRect.h);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
     }
     return true;
   }  
@@ -729,6 +872,37 @@ Circle.prototype = {
     return true;
   }
 }
+
+function Rectangle(aFillAttr, aStrokeAttr, aStrokeWidthAttr) {
+  this.fillAttr = aFillAttr;
+  this.strokeAttr = aStrokeAttr;
+  this.strokeWidthAttr = aStrokeWidthAttr;
+}
+Rectangle.prototype = {
+  render: function(aVisContext, tdelta) {
+    let ctx = aVisContext.canvas;
+  
+    let item = aVisContext.values;
+    let rect = item.rect;
+    let fill = item[this.fillAttr];
+    let stroke = item[this.strokeAttr];
+    ctx.beginPath();
+    ctx.rect(rect.x, rect.y, rect.w, rect.h);
+    ctx.closePath();
+    aVisContext.hitTest(item);
+    if (fill) {
+      ctx.fillStyle = fill.toString();
+      ctx.fill();
+    }
+    if (stroke) {
+      ctx.strokeStyle = stroke.toString();
+      ctx.lineWidth = item[this.strokeWidthAttr] || 1; 
+      ctx.stroke();
+    }
+    return true;
+  }
+}
+
 
 function ExternalToggler(aFirstAction, aSecondAction, aIdAttr, aStashAttr,
     aSettings) {

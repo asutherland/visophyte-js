@@ -4,26 +4,28 @@
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
   <head>
     <title>Line of Time</title>
-    <script src="example_data.js" type="application/javascript;version=1.8"/>
+    <script src="example_log_data.js" type="application/javascript;version=1.8"/>
     <script src="visophyte.js" type="application/javascript;version=1.8"/>
     <script type="application/javascript;version=1.8">
       var vRequest, vTimeline, vcTimeline;
       function setupVis() {
         vRequest = new Vis();
         vRequest.add(new ValueMapper("source", "fill",
-          {"gloda.query": "blue", "exptoolbar": "red"});
-        vRequest.add(new Rect("fill", "stroke", "strokeWidth"));
+          {"gloda.query": "#aaf", "exptoolbar": "#faa"}));
+        vRequest.add(new Rectangle("fill", "stroke", "strokeWidth"));
       
         vTimeline = new Vis();
+        vTimeline.add(new HoverToggler("toggled",
+                                     {fill: "white"}));
         // position and size the vRequest instances
-        vTimeline.add(new TimeLayout(vRequest, "startTime", "stopTime",
+        vTimeline.add(new TimeLayout(vRequest, 10, "started", "finished",
             {stroke: "black", strokeWidth: 1}));
         // display the caused-by line
-        vTimeline.add(new ExtractFrom("causedBy", {right: "causedByRight",
-                                                   bottom: "causedByBottom"}));
-        vTimeline.add(new Line("causedByRight", "causedByBottom", "left", "top"));
+        //vTimeline.add(new ExtractFrom("causedBy", {right: "causedByRight",
+        //                                           bottom: "causedByBottom"}));
+        //vTimeline.add(new Line("causedByRight", "causedByBottom", "left", "top"));
             
-        vcTimeline = vTimeline.makeContext(data, {
+        vcTimeline = vTimeline.makeContext(logData, {
           }); 
         
         vcTimeline.bindToCanvasNode(document.getElementById("timey"), 0, 0);

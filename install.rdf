@@ -15,5 +15,12 @@
         <em:maxVersion>3.0.*</em:maxVersion>
       </Description>
     </em:targetApplication>
+    <em:targetApplication>
+      <Description>
+        <em:id>logsploder@mozillamessaging.com</em:id>
+        <em:minVersion>0.1</em:minVersion>
+        <em:maxVersion>1.0</em:maxVersion>
+      </Description>
+    </em:targetApplication>
   </Description>
 </RDF>
